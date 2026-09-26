@@ -121,7 +121,8 @@ class GenerationMixin:
                 return
             try:
                 candidate = copy.deepcopy(self.project)
-                commit_version(candidate, index, data, kind, job_feedback, model)
+                commit_version(candidate, index, data, kind, job_feedback, model,
+                               candidate['tracks'][index].get('suno_model'))
                 if job_feedback:
                     candidate['tracks'][index]['feedback'] = job_feedback
                 self.store.save(candidate)

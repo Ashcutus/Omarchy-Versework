@@ -362,3 +362,28 @@ class UserLyricsTests(unittest.TestCase):
         self.assertTrue(any('ragged pub-band drums' in value for value in requirements['style_prompt']))
         self.assertIn('[Drums: ragged pub-band feel]', requirements['lyrics'])
         self.assertIn('rigid drum quantization', requirements['exclusions'])
+
+
+class SunoModelTests(unittest.TestCase):
+    def test_v6_is_default_and_each_model_gets_appropriate_prompt_guidance(self):
+        project = create_project('Song', 'Folk', 1, 180, 240, 3)
+        track = project['tracks'][0]
+        self.assertEqual(track['suno_model'], 'v6')
+        expectations = {'v6': 'v6, precise', 'v6-wild': 'v6-wild, exploratory', 'v6-mini': 'v6-mini, concise'}
+        for model, phrase in expectations.items():
+            track['suno_model'] = model
+            self.assertIn(phrase, prompt_for(project, 0))
+
+    def test_suno_model_is_saved_with_each_generation_and_restored_with_version(self):
+        project = create_project('Song', 'Folk', 1, 180, 240, 3)
+        project['tracks'][0]['suno_model'] = 'v6-wild'
+        commit_version(project, 0, song(), 'initial')
+        self.assertEqual(project['tracks'][0]['versions'][0]['suno_model'], 'v6-wild')
+        project['tracks'][0]['suno_model'] = 'v6-mini'
+        restore_version(project, 0, 0)
+        self.assertEqual(project['tracks'][0]['suno_model'], 'v6-wild')
+
+    def test_export_identifies_model_for_each_track(self):
+        project = create_project('Song', 'Folk', 1, 180, 240, 3, suno_model='v6-mini')
+        self.assertIn('Suno model: v6-mini', export_text(project))
+        self.assertIn('Suno model\nv6-mini', song_text(song(), 'v6-mini'))

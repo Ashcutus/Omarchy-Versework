@@ -15,6 +15,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 FIELDS = ['title', 'lyrics', 'style_prompt', 'exclusions', 'vocal_gender', 'weirdness', 'style_influence', 'variety']
+SUNO_MODELS = {
+    'v6': {'label': 'v6 — Precise', 'about': 'Balanced, reliable and polished; choose this when you know what you want.',
+           'guidance': 'MODEL-SPECIFIC SUNO PROMPT (v6, precise): Follow the creative brief closely. Make the style prompt specific and coherent: lead with the main genre, then groove/tempo feel, defining instruments, vocal delivery and production character. Keep every detail purposeful and avoid contradictory directions. Write deliberate, singable lyrics with clear sections, natural stresses and a strong hook that serves the brief.'},
+    'v6-wild': {'label': 'v6-wild — Experimental', 'about': 'More varied and unpredictable; choose this to explore unexpected directions.',
+                'guidance': 'MODEL-SPECIFIC SUNO PROMPT (v6-wild, exploratory): Preserve the user’s essential genre, story, hook and exclusions, but invite one or two surprising textures, rhythmic turns or complementary genre influences. Make the style prompt vivid and open to interpretation rather than over-prescribing every detail. Let lyrics use less obvious imagery and phrasing while remaining coherent and singable. Keep explicit user constraints firm.'},
+    'v6-mini': {'label': 'v6-mini — Fast', 'about': 'A faster, lighter model; focus on the central idea and essential details.',
+                 'guidance': 'MODEL-SPECIFIC SUNO PROMPT (v6-mini, concise): Prioritise the central genre, mood, groove, a few defining instruments and vocal character. Use direct, compact style wording with no redundant adjectives or long chains of production instructions. Keep the lyric structure clear and the hook memorable; prefer focused verses and chorus over unnecessary sections. Preserve all explicit constraints.'},
+}
+DEFAULT_SUNO_MODEL = 'v6'
 LABELS = dict(zip(FIELDS, ['Song title', 'Lyrics', 'Style prompt', 'Exclusions', 'Vocal gender', 'Weirdness %', 'Style influence %', 'Variety level']))
 TEXT_LIMIT = 1000
 VARIETIES = ['off', 'normal', 'high', 'extra', 'max']
@@ -283,7 +292,7 @@ def validate_song(value):
     return out
 
 
-def create_project(name, style, count, minimum, maximum, limit, theme='', language='English', lyrics=''):
+def create_project(name, style, count, minimum, maximum, limit, theme='', language='English', lyrics='', suno_model=DEFAULT_SUNO_MODEL):
     if len(style) > TEXT_LIMIT:
         raise ValueError(f'Style prompt must be {TEXT_LIMIT} characters or fewer.')
     if not name.strip() or not style.strip():
@@ -293,16 +302,19 @@ def create_project(name, style, count, minimum, maximum, limit, theme='', langua
     lyrics = str(lyrics or '').strip()
     if len(lyrics) > 100000:
         raise ValueError('Provided lyrics are too long.')
+    if suno_model not in SUNO_MODELS:
+        raise ValueError('Choose a supported Suno model.')
     return {'schema_version': 1, 'id': uuid.uuid4().hex, 'name': name.strip(), 'style': style.strip(), 'count': count,
             'minimum': minimum, 'maximum': maximum, 'limit': limit, 'theme': theme.strip(),
             'lyrics_source': lyrics, 'lyrics_assist': 'suggest',
             'language': language.strip() or 'English', 'created': now(), 'updated': now(),
             'tracks': [{'id': uuid.uuid4().hex, 'number': i + 1, 'current': None, 'versions': [],
                         'rewrites': 0, 'approved': False, 'locks': [], 'feedback': '',
-                        'lyrics_source': lyrics if i == 0 else '', 'lyrics_assist': 'suggest'} for i in range(count)]}
+                        'lyrics_source': lyrics if i == 0 else '', 'lyrics_assist': 'suggest',
+                        'suno_model': suno_model} for i in range(count)]}
 
 
-def commit_version(project, index, song, kind, feedback='', model=''):
+def commit_version(project, index, song, kind, feedback='', model='', suno_model=None):
     track = project['tracks'][index]
     if track['approved']:
         raise ValueError('Reopen this approved song before changing it.')
@@ -321,7 +333,11 @@ def commit_version(project, index, song, kind, feedback='', model=''):
     data = validate_song(data)
     if kind == 'rewrite' and all(data[k] == track['current'][k] for k in FIELDS):
         raise ValueError('The model did not change any unlocked song fields. Your rewrite allowance is unchanged; try more specific feedback.')
-    version = {'at': now(), 'kind': kind, 'feedback': feedback, 'model': model, 'song': data}
+    suno_model = suno_model or track.get('suno_model', DEFAULT_SUNO_MODEL)
+    if suno_model not in SUNO_MODELS:
+        raise ValueError('Choose a supported Suno model.')
+    track['suno_model'] = suno_model
+    version = {'at': now(), 'kind': kind, 'feedback': feedback, 'model': model, 'suno_model': suno_model, 'song': data}
     track['versions'].append(version)
     track['current'] = copy.deepcopy(data)
     if kind == 'rewrite':
@@ -330,7 +346,9 @@ def commit_version(project, index, song, kind, feedback='', model=''):
 
 
 def restore_version(project, index, version_index):
-    song = copy.deepcopy(project['tracks'][index]['versions'][version_index]['song'])
+    version = project['tracks'][index]['versions'][version_index]
+    song = copy.deepcopy(version['song'])
+    project['tracks'][index]['suno_model'] = version.get('suno_model', DEFAULT_SUNO_MODEL)
     commit_version(project, index, song, 'restore', f'Restored version {version_index + 1}')
 
 
@@ -358,6 +376,10 @@ def prompt_for(project, index, feedback=''):
         role = ('A distinct standalone song in a themed collection' if context['kind'] == 'collection' else
                 f"Song {context['position']} of {context['total']} on this {context['kind']}")
     brief['production'] = production_brief(track)
+    model = track.get('suno_model', DEFAULT_SUNO_MODEL)
+    if model not in SUNO_MODELS:
+        model = DEFAULT_SUNO_MODEL
+    brief['suno_model'] = {'id': model, 'about': SUNO_MODELS[model]['about']}
     brief['required_delivery_cues'] = production_requirements(track, (track.get('current') or {}).get('vocal_gender') == 'instrumental')
     brief['track_role'] = role
     source = track.get('lyrics_source', '')
@@ -380,7 +402,7 @@ def prompt_for(project, index, feedback=''):
         result += '\n\nYOUR REVISION TASK NOW:\n' + feedback + '\nOnly these fields are locked: ' + ', '.join(track['locks']) + '\nWrite the revised song JSON now. The lyrics must actually reflect the requested changes. Do not copy the old song unchanged.'
     else:
         result += '\n\nFINAL WRITING CHECK: This is track ' + str(brief['track_number']) + '. Invent an entirely new chorus. Do not reuse any line from the peer tracks shown above. Shared genre does not mean shared lyrics.'
-    result += '\nLYRIC SOURCE CHECK: The working title is not lyric content. Never use it as a lyric hook or line. If user lyrics are supplied, follow the selected preserve-or-suggest instruction exactly.\nPRODUCTION DELIVERY CHECK: Include every required_delivery_cues phrase verbatim in its named field. Put lyrics cues on separate bracketed lines before the sung lyrics; do not sing them. Integrate style phrases naturally and remove contradictory production descriptions. Exclusions name unwanted elements. For instrumental output omit vocal cues and vocal exclusions. Locked fields must stay unchanged. Stay within the 1000-character field limits. Apply arrangement notes too; mentioning a change only in notes does not count.'
+    result += '\n' + SUNO_MODELS[model]['guidance'] + '\nLYRIC SOURCE CHECK: The working title is not lyric content. Never use it as a lyric hook or line. If user lyrics are supplied, follow the selected preserve-or-suggest instruction exactly.\nPRODUCTION DELIVERY CHECK: Include every required_delivery_cues phrase verbatim in its named field. Put lyrics cues on separate bracketed lines before the sung lyrics; do not sing them. Integrate style phrases naturally and remove contradictory production descriptions. Exclusions name unwanted elements. For instrumental output omit vocal cues and vocal exclusions. Locked fields must stay unchanged. Stay within the 1000-character field limits. Apply arrangement notes too; mentioning a change only in notes does not count.'
     return result
 
 
@@ -458,14 +480,18 @@ def export_text(project):
     lines = [f"# {project['name']}", '', f"Style: {project['style']}", f"Target length: {project['minimum']}–{project['maximum']} seconds per song", '']
     for track in project['tracks']:
         lines.extend([f"## {track['number']:02d}. " + (track['current']['title'] if track['current'] else 'Not drafted'),
+                      f"Suno model: {track.get('suno_model', DEFAULT_SUNO_MODEL)}",
                       f"Status: {track_status(project, track)} · Rewrites: {track['rewrites']}/{'∞' if project['limit'] is None else project['limit']}", ''])
         if track['current']:
             lines.append(song_text(track['current']))
     return '\n'.join(lines)
 
 
-def song_text(song):
-    return '\n\n'.join(f'{LABELS[k]}\n{song[k]}' for k in FIELDS) + '\n'
+def song_text(song, suno_model=None):
+    fields = [f'{LABELS[k]}\n{song[k]}' for k in FIELDS]
+    if suno_model:
+        fields.insert(0, 'Suno model\n' + suno_model)
+    return '\n\n'.join(fields) + '\n'
 
 
 class Store:
@@ -520,11 +546,18 @@ class Store:
                 raise ValueError('Invalid track review settings.')
             if track.get('state', 'active') not in ('active', 'archive', 'trash'):
                 raise ValueError('Invalid library state.')
-            if track.get('current') is not None:
-                validate_song(track['current'])
+            track.setdefault('suno_model', DEFAULT_SUNO_MODEL)
+            if track['suno_model'] not in SUNO_MODELS:
+                raise ValueError('Invalid Suno model.')
             for version in track['versions']:
                 if not isinstance(version, dict) or 'song' not in version:
                     raise ValueError('Invalid saved version.')
+                version.setdefault('suno_model', DEFAULT_SUNO_MODEL)
+                if version['suno_model'] not in SUNO_MODELS:
+                    raise ValueError('Invalid saved Suno model.')
+            if track.get('current') is not None:
+                validate_song(track['current'])
+            for version in track['versions']:
                 validate_song(version['song'])
         value['schema_version'] = 1
         return value
@@ -571,6 +604,8 @@ class Store:
         limit = settings.get('rewrite_limit', settings.get('limit', 3))
         if limit is not None and (type(limit) is not int or not 0 <= limit <= 20):
             raise ValueError('Invalid rewrite limit.')
+        if settings.get('default_suno_model', DEFAULT_SUNO_MODEL) not in SUNO_MODELS:
+            raise ValueError('Choose a supported Suno model.')
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO settings VALUES (1, ?)', (json.dumps(settings),))
             if apply_existing:
@@ -661,8 +696,15 @@ class Store:
         raise ValueError('Song no longer exists.')
     def settings(self):
         row = self.db.execute('SELECT body FROM settings WHERE id=1').fetchone()
-        return {'model': 'qwen3:8b', 'ui_language': 'system', 'colour_mode': 'system', 'colours': {}, **(json.loads(row[0]) if row else {})}
+        saved = {'model': 'qwen3:8b', 'default_suno_model': DEFAULT_SUNO_MODEL,
+                 'ui_language': 'system', 'colour_mode': 'system', 'colours': {},
+                 **(json.loads(row[0]) if row else {})}
+        if saved.get('default_suno_model') not in SUNO_MODELS:
+            saved['default_suno_model'] = DEFAULT_SUNO_MODEL
+        return saved
     def save_settings(self, settings):
+        if settings.get('default_suno_model', DEFAULT_SUNO_MODEL) not in SUNO_MODELS:
+            raise ValueError('Choose a supported Suno model.')
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO settings VALUES (1, ?)', (json.dumps(settings),))
 

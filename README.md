@@ -120,6 +120,16 @@ Use the **Production** button on any song to adjust its next draft or rewrite. F
 
 For both new drafts and rewrites (including collection updates), Versework supplies explicit production phrases for the style prompt, bracketed performance cues for the lyrics, and relevant exclusions. It assembles these fixed cues locally in unlocked fields, respecting the selected rewrite scope and preserving supplied lyrics. It keeps style and exclusions within their character limits. Freeform arrangement notes are also sent as creative direction; their meaning is not automatically verified. Saving direction does not change existing lyrics: generate a draft or use Review to request a rewrite. Locked fields and rewrite limits still apply. Suno may interpret the instructions differently; this is creative direction, not direct control of its audio engine.
 
+## Choose a Suno model
+
+Choose the default for new songs in Settings or change the model on an individual song. Versework uses the choice to shape Ollama's lyric and style prompt, stores it with each song version, and includes it in copied/exported song text. Before creating in Suno, select the same model there: Versework prepares the prompts but does not submit or create audio.
+
+- **v6** is Suno's flagship model for reliable, precise, polished generations. Its prompt favours a clearly ordered, detailed direction.
+- **v6-wild** is designed for less predictable, more varied results. Its prompt keeps the core requirements firm while opening space for a couple of creative surprises.
+- **v6-mini** is the faster, lighter option. Its prompt foregrounds a concise central idea and a few essential details.
+
+Suno describes these model characteristics; the prompt-writing differences are Versework's practical guidance inferred from those descriptions, not official Suno prompt syntax or a guarantee of results. Plan availability may vary: Suno lists v6 and v6-wild for Pro/Premier and v6-mini for all plans. See [Suno's current model overview](https://help.suno.com/en/articles/13924801), [model picker instructions](https://help.suno.com/en/articles/13924993), and [v6 FAQ](https://help.suno.com/en/articles/13924481).
+
 ## Optional collections, albums and EPs
 
 Use **New collection** to name a group, give it a theme and choose songs. A collection may be labelled **Collection**, **Album** or **EP**; change that at any time under **Manage collection**. The up/down controls determine running order. A song can belong to more than one collection.

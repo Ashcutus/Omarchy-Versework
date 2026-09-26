@@ -13,7 +13,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gdk', '4.0')
 from gi.repository import Gtk, Gdk, Gio, GLib
-from core import (DRUM_FEELS, drum_feel, PRODUCTION_OPTIONS, production_direction, TEXT_LIMIT, FIELDS, LABELS, VARIETIES, VOCALS, Store, Ollama, Cancelled, create_project,
+from core import (DRUM_FEELS, drum_feel, PRODUCTION_OPTIONS, production_direction, TEXT_LIMIT, FIELDS, LABELS, VARIETIES, VOCALS, SUNO_MODELS, DEFAULT_SUNO_MODEL, Store, Ollama, Cancelled, create_project,
                   make_collection, commit_version, restore_version, generate_song, track_status, song_text)
 from appearance import COLOUR_KEYS, LAYOUT_CSS, read_palette, colour_css, resolved_palette, valid_colour
 from updater import current_revision, latest_revision, install_update, confirm_startup, has_rollback, rollback_installation
@@ -391,6 +391,12 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
             if p['theme']:
                 panel.append(label(p['theme'], 'caption'))
             panel.append(label(t('Lyric language') + ': ' + p['language'], 'caption'))
+            panel.append(label(t('Suno model'), 'heading'))
+            self.suno_model_selector = dropdown(list(SUNO_MODELS), track.get('suno_model', DEFAULT_SUNO_MODEL), [t(SUNO_MODELS[key]['label']) for key in SUNO_MODELS])
+            panel.append(self.suno_model_selector)
+            self.suno_model_hint = label(t(SUNO_MODELS[track.get('suno_model', DEFAULT_SUNO_MODEL)]['about']), 'caption')
+            panel.append(self.suno_model_hint)
+            self.suno_model_selector.connect('notify::selected', lambda *_: self.suno_model_hint.set_text(t(SUNO_MODELS[text_of(self.suno_model_selector)]['about'])))
             panel.append(button(t('Write song'), lambda: self.start_jobs([i]), True))
             outer.append(panel)
             return
@@ -417,6 +423,16 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
             page.set_margin_bottom(8)
             pages[name] = page
             self.editor_stack.add_titled(scrolled(page), name, t(name))
+        model_box = box(spacing=8)
+        model_box.append(label(t('Suno model'), 'heading'))
+        self.suno_model_selector = dropdown(list(SUNO_MODELS), track.get('suno_model', DEFAULT_SUNO_MODEL), [t(SUNO_MODELS[key]['label']) for key in SUNO_MODELS])
+        self.suno_model_selector.set_sensitive(not track['approved'] and not self.busy)
+        model_box.append(self.suno_model_selector)
+        self.suno_model_hint = label(t(SUNO_MODELS[track.get('suno_model', DEFAULT_SUNO_MODEL)]['about']), 'caption')
+        model_box.append(self.suno_model_hint)
+        model_box.append(label(t('Choose the same Suno model in Create. Versework prepares the prompts but does not create the audio.'), 'caption'))
+        self.suno_model_selector.connect('notify::selected', lambda *_: self.suno_model_hint.set_text(t(SUNO_MODELS[text_of(self.suno_model_selector)]['about'])))
+        pages['Sound'].append(model_box)
         self.editor_stack.set_visible_child_name(getattr(self, 'editor_tab', 'Lyrics'))
         self.editor_stack.connect('notify::visible-child-name', lambda *_: setattr(self, 'editor_tab', self.editor_stack.get_visible_child_name()))
         song = track['current']
@@ -479,19 +495,22 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         review.append(label(t('Duration is a writing target; Suno determines the audio length.'), 'caption'))
 
     def flush(self):
-        if not self.project or self.track_index is None or not self.editors or self.busy:
+        if not self.project or self.track_index is None or self.busy:
             return True
         try:
             candidate = copy.deepcopy(self.project)
             track = candidate['tracks'][self.track_index]
             if not track['approved']:
-                song = {k: text_of(w) for k, w in self.editors.items()}
-                song['notes'] = track['current'].get('notes', '')
-                if song != track['current']:
-                    commit_version(candidate, self.track_index, song, 'edit')
-                track['locks'] = [k for k, w in self.lockers.items() if w.get_active()]
-                if self.feedback_editor:
-                    track['feedback'] = text_of(self.feedback_editor)
+                if hasattr(self, 'suno_model_selector'):
+                    track['suno_model'] = text_of(self.suno_model_selector)
+                if self.editors:
+                    song = {k: text_of(w) for k, w in self.editors.items()}
+                    song['notes'] = track['current'].get('notes', '')
+                    if song != track['current']:
+                        commit_version(candidate, self.track_index, song, 'edit')
+                    track['locks'] = [k for k, w in self.lockers.items() if w.get_active()]
+                    if self.feedback_editor:
+                        track['feedback'] = text_of(self.feedback_editor)
                 self.store.save(candidate)
                 self.project = candidate
             return True
@@ -527,7 +546,8 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
 
     def copy_current(self, control=None):
         if self.flush():
-            self.copy(song_text(self.project['tracks'][self.track_index]['current']))
+            track = self.project['tracks'][self.track_index]
+            self.copy(song_text(track['current'], track.get('suno_model', DEFAULT_SUNO_MODEL)))
             self.flash_copy(control, t('Copy song'))
 
     def copy(self, value):
@@ -592,6 +612,11 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         style, wrap = text_input('', 110)
         c.append(wrap)
         limit_text(style, c)
+        c.append(label(t('Suno model'), 'heading'))
+        suno_model = dropdown(list(SUNO_MODELS), self.settings.get('default_suno_model', DEFAULT_SUNO_MODEL), [t(SUNO_MODELS[key]['label']) for key in SUNO_MODELS])
+        c.append(suno_model)
+        c.append(label(t(SUNO_MODELS[text_of(suno_model)]['about']), 'caption'))
+        c.append(label(t('Choose the same Suno model in Create. Versework prepares the prompts but does not create the audio.'), 'caption'))
         c.append(label(t('Optional theme'), 'heading'))
         theme, wrap = text_input('', 80)
         c.append(wrap)
@@ -625,7 +650,7 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
             try:
                 if not self.flush():
                     return
-                p = create_project(text_of(entries['name']) or t('Untitled song'), text_of(style), text_of(count), text_of(minimum), text_of(maximum), None if unlimited.get_active() else text_of(limit), text_of(theme), text_of(entries['language']), text_of(user_lyrics))
+                p = create_project(text_of(entries['name']) or t('Untitled song'), text_of(style), text_of(count), text_of(minimum), text_of(maximum), None if unlimited.get_active() else text_of(limit), text_of(theme), text_of(entries['language']), text_of(user_lyrics), text_of(suno_model))
                 for track in p['tracks']:
                     track['lyrics_assist'] = text_of(lyrics_handling)
                 for track in p['tracks']:
@@ -644,6 +669,7 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
                 error.set_text(str(e))
         window.actions.append(button(t('Create'), save, True))
         window.actions.set_visible(True)
+        window.controls = {'suno_model': suno_model, 'style': style, 'lyrics': user_lyrics, 'unlimited': unlimited, 'limit': limit}
         window.present()
         return window
 
@@ -817,6 +843,14 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         c.append(label(t('System language: {language}', language=local_name), 'caption'))
         c.append(label(t('Only the interface changes. Song text and lyric language stay unchanged.'), 'caption'))
         c.append(Gtk.Separator())
+        c.append(label(t('Default Suno model for new songs'), 'heading'))
+        suno_default = dropdown(list(SUNO_MODELS), self.settings.get('default_suno_model', DEFAULT_SUNO_MODEL), [t(SUNO_MODELS[key]['label']) for key in SUNO_MODELS])
+        c.append(suno_default)
+        default_model_hint = label(t(SUNO_MODELS[text_of(suno_default)]['about']), 'caption')
+        c.append(default_model_hint)
+        c.append(label(t('Choose the same Suno model in Create. Versework prepares the prompts but does not create the audio.'), 'caption'))
+        suno_default.connect('notify::selected', lambda *_: default_model_hint.set_text(t(SUNO_MODELS[text_of(suno_default)]['about'])))
+        c.append(Gtk.Separator())
         expander = Gtk.Expander(label=t('Local writing'))
         engine = box(spacing=16)
         engine.set_margin_top(16)
@@ -878,7 +912,7 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
                 if not self.flush():
                     return
                 new_limit = None if unlimited.get_active() else int(rewrite_limit.get_value())
-                saved = {**self.settings, 'model': model.get_text().strip(), 'colour_mode': text_of(mode), 'colours': colours,
+                saved = {**self.settings, 'model': model.get_text().strip(), 'default_suno_model': text_of(suno_default), 'colour_mode': text_of(mode), 'colours': colours,
                          'ui_language': text_of(languages), 'rewrite_limit': new_limit}
                 self.store.apply_settings(saved, apply_existing=apply_existing.get_active())
                 self.settings = saved
@@ -910,7 +944,7 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         window.actions.set_visible(True)
         # Named handles also make real GTK interaction tests precise.
         window.controls = {'language': languages, 'mode': mode, 'colours': colour_entries, 'model': model,
-                           'rewrite_limit': rewrite_limit, 'unlimited': unlimited, 'apply_existing': apply_existing,
+                           'rewrite_limit': rewrite_limit, 'unlimited': unlimited, 'apply_existing': apply_existing, 'suno_default': suno_default,
                            'apply': apply, 'close': window.close, 'reset': reset}
         window.present()
         return window
@@ -1115,7 +1149,7 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         c.append(note)
         def changed(*_):
             version = track['versions'][pick.get_selected()]
-            preview.get_buffer().set_text(song_text(version['song']))
+            preview.get_buffer().set_text(song_text(version['song'], version.get('suno_model', track.get('suno_model', DEFAULT_SUNO_MODEL))))
             note.set_text(version.get('feedback') or version['song'].get('notes', ''))
         pick.connect('notify::selected', changed)
         changed()
@@ -1155,7 +1189,7 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
             track = p['tracks'][i]
             lines.extend(['## ' + song_title(p, i), t(track_status(p, track)), ''])
             if track['current']:
-                lines.append(song_text(track['current']))
+                lines.append(song_text(track['current'], track.get('suno_model', DEFAULT_SUNO_MODEL)))
         content = '\n'.join(lines)
         snapshot = {'collection': collection, 'songs': [{'brief': {k:v for k,v in p.items() if k != 'tracks'}, 'track': p['tracks'][i]} for p,i in rows]}
         window, c = self.dialog(t('Export songs'), 700, 650)

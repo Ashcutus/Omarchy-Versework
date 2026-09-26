@@ -106,6 +106,7 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(saved['ui_language'], 'system')
             self.assertEqual(saved['colour_mode'], 'system')
             self.assertEqual(saved['model'], 'another:8b')
+            self.assertEqual(saved['default_suno_model'], 'v6')
             store.db.close()
 
 
