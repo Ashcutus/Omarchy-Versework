@@ -27,6 +27,7 @@ class QueueHarness(GenerationMixin):
         for key in ('spinner', 'stop_button', 'content', 'sidebar', 'retry_button'):
             setattr(self, key, Mock())
         self.notify = Mock()
+        self.show_generation_error = Mock()
         self.flush = lambda: True
         self.render_project = Mock()
         self.review_proposal = lambda original, proposed, accept, discard, **kwargs: accept(proposed)
@@ -98,6 +99,8 @@ class QueueTests(unittest.TestCase):
             self.assertIsNone(studio.projects[projects[1]['id']]['tracks'][0]['current'])
             self.assertEqual(studio.projects[projects[2]['id']]['tracks'][0]['current']['title'], 'Third')
             self.assertEqual([job[0] for job in studio.failed_jobs], [projects[1]['id']])
+            studio.show_generation_error.assert_called_once()
+            self.assertIn('Model failed', studio.show_generation_error.call_args.args[0])
             studio.finished.clear()
             studio.ollama.generate.side_effect = None
             studio.ollama.generate.return_value = song('Recovered')

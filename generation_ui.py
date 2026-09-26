@@ -31,6 +31,7 @@ class GenerationMixin:
         self.store.save_jobs(outstanding)
         total = len(jobs)
         completed = [0]
+        failure_messages = []
         self.failed_jobs = previous
         self.retry_button.set_visible(False)
         def next_job():
@@ -40,7 +41,11 @@ class GenerationMixin:
                 self.finish(t('Writing stopped. Completed drafts are saved.'))
                 return
             if not jobs:
-                self.finish(f'{completed[0]}/{total} songs processed. {len(self.failed_jobs)} available to retry.' if self.failed_jobs else t('Drafts saved. Ready for review.'))
+                if failure_messages:
+                    details = '\n'.join(dict.fromkeys(failure_messages))
+                    self.finish(t('Song generation failed for {count} item(s). You can retry after fixing the issue. Details: {details}', count=len(failure_messages), details=details), True)
+                else:
+                    self.finish(f'{completed[0]}/{total} songs processed. {len(self.failed_jobs)} available to retry.' if self.failed_jobs else t('Drafts saved. Ready for review.'))
                 return
             ident, index, job_feedback, job_scope, job_section = jobs.pop(0)
             self.project = next((p for p in self.store.list() if p['id'] == ident), None)
@@ -60,6 +65,7 @@ class GenerationMixin:
             self.notify(t('Writing song {number}/{count}…', number=completed[0], count=total))
             def failed(message):
                 self.failed_jobs.append((ident, index, job_feedback, job_scope, job_section))
+                failure_messages.append(message)
                 self.notify(message, True)
                 next_job()
                 return False
@@ -147,6 +153,8 @@ class GenerationMixin:
         self.editors = {}
         self.render_project()
         self.notify(message, error)
+        if error and hasattr(self, 'show_generation_error'):
+            self.show_generation_error(message)
 
     def stop(self):
         self.cancel_event.set()
