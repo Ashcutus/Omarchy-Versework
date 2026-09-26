@@ -210,6 +210,15 @@ high|Hoch|Alto|Élevé
 extra|Extra|Extra|Extra
 max|Maximum|Máximo|Maximum
 Production presets|Produktionsvorlagen|Preajustes de producción|Préréglages de production
+Suno model|Suno-Modell|Modelo de Suno|Modèle Suno
+Default Suno model for new songs|Standard-Suno-Modell für neue Songs|Modelo de Suno predeterminado para canciones nuevas|Modèle Suno par défaut pour les nouvelles chansons
+v6 — Precise|v6 — Präzise|v6 — Preciso|v6 — Précis
+v6-wild — Experimental|v6-wild — Experimentell|v6-wild — Experimental|v6-wild — Expérimental
+v6-mini — Fast|v6-mini — Schnell|v6-mini — Rápido|v6-mini — Rapide
+Balanced, reliable and polished; choose this when you know what you want.|Ausgewogen, zuverlässig und ausgefeilt; wähle dieses Modell, wenn du genau weißt, was du möchtest.|Equilibrado, fiable y pulido; elígelo cuando sepas lo que quieres.|Équilibré, fiable et soigné ; choisissez-le si vous savez ce que vous voulez.
+More varied and unpredictable; choose this to explore unexpected directions.|Vielfältiger und unvorhersehbarer; wähle dieses Modell für überraschende Richtungen.|Más variado e impredecible; elígelo para explorar caminos inesperados.|Plus varié et imprévisible ; choisissez-le pour explorer des directions inattendues.
+A faster, lighter model; focus on the central idea and essential details.|Ein schnelleres, leichteres Modell; konzentriere dich auf die Grundidee und wichtige Details.|Un modelo más rápido y ligero; céntrate en la idea principal y los detalles esenciales.|Un modèle plus rapide et léger ; concentrez-vous sur l’idée centrale et les détails essentiels.
+Choose the same Suno model in Create. Versework prepares the prompts but does not create the audio.|Wähle in Suno Create dasselbe Modell. Versework bereitet die Prompts vor, erstellt aber kein Audio.|Elige el mismo modelo en Suno Create. Versework prepara los prompts, pero no genera el audio.|Choisissez le même modèle dans Suno Create. Versework prépare les prompts mais ne génère pas l’audio.
 Choose a preset|Vorlage wählen|Elegir un preajuste|Choisir un préréglage
 Machine-perfect → Sunday night in the pub|Maschinenpräzise → Sonntagabend in der Kneipe|Precisión mecánica → Domingo por la noche en el bar|Précision mécanique → Dimanche soir au pub
 Preset name|Name der Vorlage|Nombre del preajuste|Nom du préréglage

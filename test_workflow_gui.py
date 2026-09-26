@@ -51,10 +51,33 @@ class WorkflowGuiTests(unittest.TestCase):
         window = self.studio.new_dialog()
         views = [w for w in self.widgets(window) if isinstance(w, self.Gtk.TextView)]
         views[1].get_buffer().set_text('Acoustic folk')
+        window.controls['suno_model'].set_selected(1)
         self.click(window, 'Create')
         self.assertIsNone(self.studio.project['limit'])
         self.assertIsNone(self.studio.project['tracks'][0]['production']['drums'])
         self.assertIsNone(self.studio.store.list()[0]['limit'])
+        self.assertEqual(self.studio.project['tracks'][0]['suno_model'], 'v6-wild')
+
+    def test_suno_model_selection_is_saved_and_used_for_rewrite_prompts(self):
+        from core import create_project, commit_version, prompt_for
+        from test_core import song
+        project = create_project('Test', 'Folk', 1, 180, 240, 3)
+        commit_version(project, 0, song(), 'initial')
+        self.studio.store.save(project)
+        self.studio.load_project(project['id'], 0)
+        self.studio.suno_model_selector.set_selected(2)
+        self.assertTrue(self.studio.flush())
+        stored = self.studio.store.get(project['id'])
+        self.assertEqual(stored['tracks'][0]['suno_model'], 'v6-mini')
+        self.assertIn('v6-mini, concise', prompt_for(stored, 0, 'Keep this simple'))
+
+    def test_settings_saves_v6_as_default_for_new_songs(self):
+        window = self.studio.settings_dialog()
+        self.assertEqual(window.controls['suno_default'].get_selected(), 0)
+        window.controls['suno_default'].set_selected(2)
+        window.controls['apply']()
+        self.assertEqual(self.studio.settings['default_suno_model'], 'v6-mini')
+        self.assertEqual(self.studio.new_dialog().controls['suno_model'].get_selected(), 2)
 
     def test_apply_existing_refreshes_open_song_and_survives_save(self):
         from core import create_project, commit_version
