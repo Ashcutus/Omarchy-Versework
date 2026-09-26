@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -243,6 +244,15 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         self.status.remove_css_class('error')
         if error:
             self.status.add_css_class('error')
+
+    def show_generation_error(self, message):
+        dialog = Gtk.MessageDialog(transient_for=self.win, modal=True,
+                                   message_type=Gtk.MessageType.ERROR,
+                                   buttons=Gtk.ButtonsType.CLOSE,
+                                   text=t('Song generation failed'))
+        dialog.format_secondary_text(message)
+        dialog.connect('response', lambda current, *_: current.destroy())
+        dialog.present()
 
     def clear(self, container):
         while container.get_first_child():
@@ -852,19 +862,24 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         suno_default.connect('notify::selected', lambda *_: default_model_hint.set_text(t(SUNO_MODELS[text_of(suno_default)]['about'])))
         c.append(Gtk.Separator())
         expander = Gtk.Expander(label=t('Local writing'))
+        expander.set_expanded(True)
         engine = box(spacing=16)
         engine.set_margin_top(16)
         expander.set_child(engine)
         c.append(expander)
-        engine.append(label(t('Only connects to Ollama on this computer.'), 'caption'))
+        engine.append(label(t('Versework needs Ollama running before it can write songs. After a restart, start it here and check that your local model is available.'), 'caption'))
         engine.append(label(t('Local model')))
         model = Gtk.Entry(text=self.settings.get('model', 'qwen3:8b'))
         engine.append(model)
         listing = Gtk.DropDown.new_from_strings([])
         engine.append(listing)
         listing.connect('notify::selected', lambda *_: model.set_text(text_of(listing)) if text_of(listing) else None)
-        state = label('', 'caption')
+        state = label(t('Ollama connection has not been checked yet.'), 'caption')
         engine.append(state)
+        controls = box(False)
+        controls.append(button(t('Check connection'), lambda: check()))
+        controls.append(button(t('Start Ollama'), lambda: start()))
+        engine.append(controls)
         def check():
             state.set_text(t('Checking local Ollama…'))
             def worker():
@@ -877,7 +892,7 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
                         listing.set_model(Gtk.StringList.new(names))
                         if previous in names:
                             listing.set_selected(names.index(previous))
-                        state.set_text(t('Connected: {models}', models=', '.join(names)) if names else t('No local models installed.'))
+                        state.set_text(t('Connected: {models}', models=', '.join(names)) if names else t('Ollama is running, but no local models are installed. Run setup-ollama.sh to install the default model.'))
                     GLib.idle_add(done)
                 except Exception as e:
                     message = str(e)
@@ -889,17 +904,45 @@ class Studio(GenerationMixin, ProductionMixin, WorkflowMixin, Gtk.Application):
         def start():
             exe = shutil.which('ollama')
             if not exe:
-                state.set_text(t('Ollama is not installed. Run setup-ollama.sh first.'))
+                state.set_text(t('Ollama is not installed. Open a terminal in the Versework folder and run ./setup-ollama.sh.'))
                 return
             env = os.environ.copy()
             env.update(OLLAMA_HOST='127.0.0.1:11434', OLLAMA_NO_CLOUD='1', OLLAMA_VULKAN='1')
-            with (DATA / 'ollama.log').open('ab') as log:
-                subprocess.Popen([exe, 'serve'], env=env, stdout=log, stderr=log, start_new_session=True)
-            state.set_text(t('Ollama start requested. Check connection in a moment.'))
-        controls = box(False)
-        controls.append(button(t('Check connection'), check))
-        controls.append(button(t('Start Ollama'), start))
-        engine.append(controls)
+            state.set_text(t('Starting Ollama…'))
+            controls.set_sensitive(False)
+            def launch():
+                try:
+                    try:
+                        with socket.create_connection(('127.0.0.1', 11434), timeout=1):
+                            pass
+                    except OSError:
+                        DATA.mkdir(parents=True, exist_ok=True)
+                        with (DATA / 'ollama.log').open('ab') as log:
+                            subprocess.Popen([exe, 'serve'], env=env, stdout=log, stderr=log, start_new_session=True)
+                        for _ in range(15):
+                            time.sleep(1)
+                            try:
+                                with socket.create_connection(('127.0.0.1', 11434), timeout=1):
+                                    break
+                            except OSError:
+                                continue
+                        else:
+                            raise RuntimeError(t('Ollama did not start. Check the service log at {path}.', path=DATA / 'ollama.log'))
+                    names = self.ollama.models()
+                    def done():
+                        if self.settings_window is window:
+                            state.set_text(t('Connected: {models}', models=', '.join(names)) if names else t('Ollama is running, but no local models are installed. Run ./setup-ollama.sh from the Versework folder.'))
+                    GLib.idle_add(done)
+                except Exception as e:
+                    message = str(e)
+                    def failed():
+                        if self.settings_window is window:
+                            state.set_text(t('Could not start Ollama: {error}', error=message))
+                    GLib.idle_add(failed)
+                finally:
+                    GLib.idle_add(controls.set_sensitive, True)
+            threading.Thread(target=launch, daemon=True).start()
+        check()
         error = label('', 'error')
         c.append(error)
         def apply():
